@@ -10,39 +10,46 @@ app.use(express.static('public'));
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function callGemini(prompt, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
-        })
-      }
-    );
+const MODELS = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash'
+];
 
-    const data = await response.json();
-    console.log(`Attempt ${i + 1} response:`, JSON.stringify(data));
+async function callGemini(prompt) {
+  for (const model of MODELS) {
+    for (let i = 0; i < 2; i++) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+          })
+        }
+      );
 
-    // 503の場合はリトライ
-    if (data.error?.code === 503) {
-      if (i < retries - 1) {
+      const data = await response.json();
+      console.log(`Model: ${model}, Attempt ${i + 1}:`, JSON.stringify(data).slice(0, 150));
+
+      if (data.error?.code === 503) {
         console.log(`503エラー、${(i + 1) * 2}秒後にリトライ...`);
         await sleep((i + 1) * 2000);
         continue;
       }
-      throw new Error('SERVICE_UNAVAILABLE');
+
+      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (!raw) {
+        console.log(`${model}からの応答が空、次のモデルへ`);
+        break;
+      }
+
+      const clean = raw.replace(/```json|```/g, '').trim();
+      return JSON.parse(clean);
     }
-
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!raw) throw new Error('EMPTY_RESPONSE');
-
-    const clean = raw.replace(/```json|```/g, '').trim();
-    return JSON.parse(clean);
   }
+  throw new Error('SERVICE_UNAVAILABLE');
 }
 
 app.post('/api/diagnose', async (req, res) => {
