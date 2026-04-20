@@ -25,7 +25,7 @@ async function callGemini(prompt, retries = 3) {
     );
 
     const data = await response.json();
-    console.log(`Attempt ${i + 1} response:`, JSON.stringify(data).slice(0, 200));
+    console.log(`Attempt ${i + 1} response:`, JSON.stringify(data));
 
     // 503の場合はリトライ
     if (data.error?.code === 503) {
